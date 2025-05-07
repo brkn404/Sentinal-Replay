@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Progress Simulator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <style>
+        body { background-color: #181c2f; color: #fff; }
+        .dashboard-card {
+            background: #23263a;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .metric-label { color: #aaa; font-size: 0.95em; }
+        .metric-value { font-size: 1.3em; font-weight: bold; color: #0dcaf0; }
+        .gauge-row { display: flex; justify-content: center; gap: 40px; margin-bottom: 20px; }
+        .gauge-box { text-align: center; width: 160px; }
+        .backupset-title { font-size: 1.1em; font-weight: bold; color: #ffc107; }
+        .card-metrics { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+        .metric-box { background: #23263a; border-radius: 8px; padding: 12px 18px; margin-bottom: 10px; min-width: 160px; }
+        #jobInput { max-width: 350px; }
+        .error-msg { color: #ff4d4f; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col">
+                <div class="dashboard-card">
+                    <h2 class="mb-4">Job Progress Simulator</h2>
+                    <div class="input-group" id="jobInput">
+                        <input type="text" class="form-control" id="jobId" placeholder="Enter Job ID">
+                        <button class="btn btn-primary" onclick="startMonitoring()">Start Simulation</button>
+                    </div>
+                    <div id="errorMsg" class="error-msg mt-2"></div>
+                </div>
+            </div>
+        </div>
+        <div id="backupSets"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script>
+    const socket = io();
+    let plotCharts = {};
+    let rateHistory = {};
+
+    function formatBytes(bytes) {
+        if (bytes === 0 || bytes === -1) return '-';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function startMonitoring() {
+        document.getElementById('errorMsg').textContent = '';
+        document.getElementById('backupSets').innerHTML = '';
+        rateHistory = {};
+        // Destroy any existing charts
+        for (const key in plotCharts) {
+            if (plotCharts[key]) {
+                plotCharts[key].destroy();
+            }
+        }
+        plotCharts = {};
+        const jobId = document.getElementById('jobId').value;
+        if (!jobId) {
+            document.getElementById('errorMsg').textContent = 'Please enter a Job ID';
+            return;
+        }
+        fetch('/start_monitoring', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: jobId })
+        });
+    }
+
+    socket.on('job_update', function(data) {
+        if (data.error) {
+            document.getElementById('errorMsg').textContent = data.error;
+            return;
+        }
+        const updates = data.updates || [];
+        const container = document.getElementById('backupSets');
+        // Only rebuild HTML and chart if the number of backup sets changes or if the chart container is missing
+        let needsRebuild = container.childElementCount !== updates.length;
+        updates.forEach((bs, idx) => {
+            if (!document.getElementById(`plot_sofar_${idx}`)) {
+                needsRebuild = true;
+            }
+        });
+        if (needsRebuild) {
+            // Destroy all existing charts
+            for (const key in plotCharts) {
+                if (plotCharts[key]) {
+                    plotCharts[key].destroy();
+                }
+            }
+            plotCharts = {};
+            container.innerHTML = '';
+            updates.forEach((bs, idx) => {
+                if (!rateHistory[idx]) rateHistory[idx] = [];
+                const now = new Date().getTime();
+                rateHistory[idx].push({ x: now, y: bs.rate_sofar });
+                const html = `
+                <div class="dashboard-card mb-4">
+                    <div class="backupset-title mb-2">Backup Set #${idx+1} (${bs.client_name} - ${bs.backup_type})</div>
+                    <div class="gauge-row">
+                        <div class="gauge-box" style="width: 100%;">
+                            <div id="plot_sofar_${idx}"></div>
+                            <div class="metric-label mt-1">Bytes/sec (Live Plot)</div>
+                        </div>
+                    </div>
+                    <div class="card-metrics d-flex flex-wrap gap-3 justify-content-center">
+                        <div class="metric-box">
+                            <div class="metric-label">File Type</div>
+                            <div class="metric-value" id="val_ftype_${idx}">${bs.current_ftype}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Current Path</div>
+                            <div class="metric-value" id="val_path_${idx}" style="font-size:0.95em; color:#fff;">${bs.current_file}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Last Update</div>
+                            <div class="metric-value" id="val_update_${idx}">${bs.last_update}</div>
+                        </div>
+                    </div>
+                </div>`;
+                container.innerHTML += html;
+            });
+            // After HTML is in the DOM, render the charts
+            updates.forEach((bs, idx) => {
+                setTimeout(() => {
+                    renderPlot(`plot_sofar_${idx}`, rateHistory[idx]);
+                }, 0);
+            });
+        } else {
+            updates.forEach((bs, idx) => {
+                if (!rateHistory[idx]) rateHistory[idx] = [];
+                const now = new Date().getTime();
+                rateHistory[idx].push({ x: now, y: bs.rate_sofar });
+                setTimeout(() => {
+                    renderPlot(`plot_sofar_${idx}`, rateHistory[idx]);
+                }, 0);
+                document.getElementById(`val_ftype_${idx}`).innerHTML = bs.current_ftype;
+                document.getElementById(`val_path_${idx}`).innerHTML = bs.current_file;
+                document.getElementById(`val_update_${idx}`).innerHTML = bs.last_update;
+            });
+        }
+    });
+
+    function renderPlot(containerId, data) {
+        const options = {
+            chart: { type: 'line', height: 200, animations: { enabled: true } },
+            series: [{ name: 'Bytes/sec', data: data }],
+            xaxis: { type: 'datetime', labels: { show: false } },
+            yaxis: { labels: { formatter: val => formatBytes(val) + '/s' } },
+            stroke: { curve: 'smooth', width: 3 },
+            tooltip: { x: { format: 'HH:mm:ss' } },
+            grid: { borderColor: '#444' }
+        };
+        if (plotCharts[containerId]) {
+            plotCharts[containerId].updateSeries([{ data: data }]);
+        } else {
+            plotCharts[containerId] = new ApexCharts(document.querySelector('#' + containerId), options);
+            plotCharts[containerId].render();
+        }
+    }
+    </script>
+</body>
+</html> 
