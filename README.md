@@ -1,6 +1,6 @@
 # Job Progress Simulator Dashboard
 
-A modern, real-time dashboard for visualizing job throughput and progress from log files. Features a live-updating line plot of Bytes/sec (throughput) for each backup set, with a clean executive-style UI.
+A real-time dashboard for visualizing job throughput and progress from log files. Features a live-updating line plot of Bytes/sec (throughput) for each backup set, with a clean executive-style UI.
 
 ## Features
 - Enter a job ID to simulate and visualize its progress
@@ -24,7 +24,7 @@ A modern, real-time dashboard for visualizing job throughput and progress from l
    pip install -r requirements.txt
    ```
 
-4. **Place your log file** (e.g., `parselogs.lipsgcxap02.jobprog.log.out`) in the project directory.
+4. **Place your log file** (e.g., `parselogs.xxxxxx.jobprog.log.out`) in the project directory.
 
 5. **Run the app:**
    ```bash

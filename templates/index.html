@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Job Progress Simulator</title>
+    <title>Sentinel Job Replay</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <style>
@@ -31,7 +31,7 @@
         <div class="row mb-4">
             <div class="col">
                 <div class="dashboard-card">
-                    <h2 class="mb-4">Job Progress Simulator</h2>
+                    <h2 class="mb-4">Sentinel Job Replay</h2>
                     <div class="input-group" id="jobInput">
                         <input type="text" class="form-control" id="jobId" placeholder="Enter Job ID">
                         <button class="btn btn-primary" onclick="startMonitoring()">Start Simulation</button>
@@ -55,6 +55,15 @@
         const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatDuration(seconds) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = seconds % 60;
+        return [h, m, s]
+            .map(v => v < 10 ? '0' + v : v)
+            .join(':');
     }
 
     function startMonitoring() {
@@ -122,12 +131,16 @@
                             <div class="metric-value" id="val_ftype_${idx}">${bs.current_ftype}</div>
                         </div>
                         <div class="metric-box">
-                            <div class="metric-label">Current Path</div>
-                            <div class="metric-value" id="val_path_${idx}" style="font-size:0.95em; color:#fff;">${bs.current_file}</div>
-                        </div>
-                        <div class="metric-box">
                             <div class="metric-label">Last Update</div>
                             <div class="metric-value" id="val_update_${idx}">${bs.last_update}</div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Job Runtime</div>
+                            <div class="metric-value" id="val_runtime_${idx}"></div>
+                        </div>
+                        <div class="metric-box">
+                            <div class="metric-label">Total Data Processed</div>
+                            <div class="metric-value" id="val_total_data_${idx}"></div>
                         </div>
                     </div>
                 </div>`;
@@ -148,8 +161,18 @@
                     renderPlot(`plot_sofar_${idx}`, rateHistory[idx]);
                 }, 0);
                 document.getElementById(`val_ftype_${idx}`).innerHTML = bs.current_ftype;
-                document.getElementById(`val_path_${idx}`).innerHTML = bs.current_file;
                 document.getElementById(`val_update_${idx}`).innerHTML = bs.last_update;
+            });
+        }
+        if (data.job_runtime !== undefined) {
+            updates.forEach((bs, idx) => {
+                document.getElementById(`val_runtime_${idx}`).innerHTML = formatDuration(data.job_runtime);
+            });
+        }
+        // Set Total Data Processed
+        if (data.total_sofar_bytes !== undefined) {
+            updates.forEach((bs, idx) => {
+                document.getElementById(`val_total_data_${idx}`).innerHTML = formatBytes(data.total_sofar_bytes);
             });
         }
     });

@@ -19,24 +19,38 @@ def get_job_lines_and_max(job_id):
     max_nfiles = 0
     max_ndirs = 0
     max_total_bytes = 0
+    min_time = None
+    max_time = None
+    max_sofar_per_set = {}
     with open(log_file, 'r') as f:
         for line in f:
             try:
                 data = json.loads(line)
                 if str(data.get('jobid')) == str(job_id):
                     job_lines.append(data)
-                    for bs in data.get('bsProgs', []):
+                    nowtm = data.get('nowtm')
+                    if nowtm is not None:
+                        if min_time is None or nowtm < min_time:
+                            min_time = nowtm
+                        if max_time is None or nowtm > max_time:
+                            max_time = nowtm
+                    for bs_idx, bs in enumerate(data.get('bsProgs', [])):
                         for level in bs.get('levels', []):
                             max_sofar_bytes = max(max_sofar_bytes, level.get('sofar_bytes', 0))
-                            max_total_bytes = max(max_total_bytes, level.get('total_bytes', 0))
+                            max_sofar_per_set[(bs_idx, level.get('path', ''))] = max(
+                                max_sofar_per_set.get((bs_idx, level.get('path', '')), 0),
+                                level.get('sofar_bytes', 0)
+                            )
                         max_nfiles = max(max_nfiles, bs.get('nfiles', 0))
                         max_ndirs = max(max_ndirs, bs.get('ndirs', 0))
             except Exception:
                 continue
-    return job_lines, max_sofar_bytes, max_nfiles, max_ndirs, max_total_bytes
+    job_runtime = (max_time - min_time) if (min_time is not None and max_time is not None) else 0
+    total_sofar_bytes = sum(max_sofar_per_set.values())
+    return job_lines, max_sofar_bytes, max_nfiles, max_ndirs, max_total_bytes, job_runtime, total_sofar_bytes
 
 def simulate_job(job_id):
-    job_lines, _, _, _, _ = get_job_lines_and_max(job_id)
+    job_lines, _, _, _, _, job_runtime, total_sofar_bytes = get_job_lines_and_max(job_id)
     if not job_lines:
         socketio.emit('job_update', {'error': f'No data found for jobid {job_id}'})
         return
@@ -94,7 +108,7 @@ def simulate_job(job_id):
                     'backup_type': bs.get('backup_type', ''),
                     'last_update': datetime.fromtimestamp(entry.get('nowtm')).strftime('%Y-%m-%d %H:%M:%S')
                 })
-        socketio.emit('job_update', {'updates': updates})
+        socketio.emit('job_update', {'updates': updates, 'job_runtime': job_runtime, 'total_sofar_bytes': total_sofar_bytes})
         time.sleep(0.2)
 
 @app.route('/')
