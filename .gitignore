@@ -5,3 +5,4 @@ venv/
 *.out
 __pycache__/
 .env
+parselogs.lipsgcxap02.jobprog.log.out
