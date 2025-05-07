@@ -1,6 +1,4 @@
 venv/
-  __pycache__/
-  *.pyc
-  *.log
-  parselogs.lipsgcxap02.jobprog.log.out
-  
+*.log
+*.pyc
+__pycache__/
